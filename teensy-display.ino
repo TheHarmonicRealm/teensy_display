@@ -4,7 +4,8 @@
  * Parts/Libraries:
  *  - Teensy LC
  *  - Adafruit NeoMatrix
- *  - DebounceEvent button manager
+ *  - DebounceEvent button manager by Xose Perez
+ *  - everytime library by Karl Fessel
  *
  * Usage:
  *  3 buttons control the behavior of the display
@@ -16,8 +17,8 @@
 #include <Adafruit_NeoMatrix.h>
 #include <DebounceEvent.h>
 #include <TimeLib.h>
-#include <time.h>
-#include <stdbool.h>
+//#include <stdbool.h>
+#include <everytime.h>
 
 #define DEBUG_ON    1
 
@@ -55,7 +56,6 @@ typedef enum
 } Event_t;
 
 State_t state;                                             // tracks the state of the display
-bool time_to_update = true;                               // specifies if display timer should be updated
 const char *message = { "Welcome to Spartronics Open House!" }; // prints the message on display
 
 uint32_t countdown_time;    // tracks the countdown time to bag date
@@ -165,7 +165,35 @@ void setup()
     state = STATE_COUNTDOWN;
 }
 
-// given the time elements, returns a time in secs since epoch
+/**
+ * continously loop through button callbacks to detect display state changes
+ * if no button presses, update the display accordingly
+ *      - if in countdown mode, wait for timer_ticks to adjust seconds, etc.
+ *      - if in sayings mode, print the 'sayings' on the matrix
+ *      - in any other mode, wait for inc/dec button presses
+ */
+void loop()
+{
+    // listen for button callbacks and trigger state_machine change accordingly
+    mode_button->loop();
+    inc_button->loop();
+    dec_button->loop();
+
+    // listen for timer events & update state machine
+    every(1000)
+    {
+        state = state_machine(state, EVENT_TIMER);
+    }
+}
+
+int x = matrix.width();
+int pass = 0;
+
+/**
+ * Time functions:
+ *  - tmConvert_t: given a date info, makes time -- returns time in seconds since epoch
+ *  - compute_elapsedTime: given a ulong, parses DD:HH:MM:SS -- see: https://pastebin.com/sfEjA94n
+ */
 time_t tmConvert_t(int YYYY, byte MM, byte DD, byte hh, byte mm, byte ss)
 {
     tmElements_t tmSet;
@@ -180,41 +208,21 @@ time_t tmConvert_t(int YYYY, byte MM, byte DD, byte hh, byte mm, byte ss)
     return makeTime(tmSet); //convert to time_t
 }
 
-void timer_callback(void)
+void compute_elapsedTime(ElapsedTime_t *t)
 {
-    time_to_update = true;
+    uint32_t difference = countdown_time;
+
+    t->seconds = difference % 60;
+    difference /= 60; // now it is minutes
+
+    t->minutes = difference % 60;
+    difference /= 60; // now it is hours
+
+    t->hours = difference % 24;
+    difference /= 24; // now it is days
+
+    t->days = difference;
 }
-
-/**
- * continously loop through button callbacks to detect display state changes
- * if no button presses, update the display accordingly
- *      - if in countdown mode, wait for timer_ticks to adjust seconds, etc.
- *      - if in sayings mode, print the 'sayings' on the matrix
- *      - in any other mode, wait for inc/dec button presses
- */
-void loop()
-{
-#if DEBUG_ON
-    // print_scroll("Spartronics");
-    // do_clock(STATE_COUNTDOWN);      // print countdown_time as DD:HH:MM:SS
-#endif
-
-    // listen for button callbacks and trigger state_machine change accordingly
-    mode_button->loop();
-    inc_button->loop();
-    dec_button->loop();
-
-    // if timer_ticks --> do we get callback from the timer?
-    if (time_to_update)
-    {
-        time_to_update = false;
-        state = state_machine(state, EVENT_TIMER);
-    }
-}
-
-int x = matrix.width();
-int pass = 0;
-
 /**
  * Scrolling message
  * TODO: fix the display configuration to support the length of the message
@@ -225,9 +233,12 @@ void print_scroll(const char *str)
     matrix.fillScreen(0);
     matrix.setCursor(x, 0);
     matrix.print(F(str));
-    /* starts the print from width of the matrix + offset, which is 36 */
-    /* when offset is reached, pass is complete & color is updated */
-    if (--x < -36)
+    /** starts the print from width of the matrix + offset, which is 36
+     * when offset is reached, pass is complete & color is updated
+     * TODO: fix the offset calculation
+    **/
+    int offset = (strlen(str)*4) + 36;
+    if (--x < -offset)
     {
         x = matrix.width();
         if (++pass >= 3)
@@ -235,7 +246,6 @@ void print_scroll(const char *str)
         matrix.setTextColor(colors[pass]);
     }
     matrix.show();
-    delay(100);
 }
 
 /**
@@ -257,8 +267,24 @@ void print_time(ElapsedTime_t *t)
     matrix.setTextColor(colors[1]);
     matrix.print(F(str));
     matrix.show();
-    delay(100);
 }
+
+int current_color=0;
+// TODO: fix the code for color selection
+// FIXME: this code does NOT work!
+void change_text_color()
+{
+    int next = current_color;
+    if (next == 3)
+    {
+        next = 0;
+    }
+
+    matrix.setTextColor(colors[++next]);
+    matrix.show();
+    current_color = next;
+}
+
 
 /**
  * Responsible for updating the state of the system
@@ -305,6 +331,7 @@ State_t state_machine(State_t current_state, Event_t event)
                 break;
 
             case STATE_DAYS:
+                change_text_color();
                 if (event == EVENT_INCREMENT)
                 {
                     // increase the day count
@@ -317,6 +344,7 @@ State_t state_machine(State_t current_state, Event_t event)
                 break;
 
             case STATE_HOURS:
+                change_text_color();
                 if (event == EVENT_INCREMENT)
                 {
                     // increase the day count
@@ -329,6 +357,7 @@ State_t state_machine(State_t current_state, Event_t event)
                 break;
 
             case STATE_MINUTES:
+                change_text_color();
                 if (event == EVENT_INCREMENT)
                 {
                     // increase the day count
@@ -341,6 +370,7 @@ State_t state_machine(State_t current_state, Event_t event)
                 break;
 
             case STATE_SECONDS:
+                change_text_color();
                 if (event == EVENT_INCREMENT)
                 {
                     // increase the day count
@@ -393,24 +423,4 @@ void do_clock(State_t state)
             print_time(&elapsed_time);
             break;
     }
-}
-
-/**
- * Parses the countdown_time value to DD:HH:MM:SS
- * See: https://pastebin.com/sfEjA94n
- */
-void compute_elapsedTime(ElapsedTime_t *t)
-{
-    uint32_t difference = countdown_time;
-
-    t->seconds = difference % 60;
-    difference /= 60; // now it is minutes
-
-    t->minutes = difference % 60;
-    difference /= 60; // now it is hours
-
-    t->hours = difference % 24;
-    difference /= 24; // now it is days
-
-    t->days = difference;
 }
