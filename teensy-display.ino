@@ -20,7 +20,7 @@
 //#include <stdbool.h>
 #include <everytime.h>
 
-#define DEBUG_ON    1
+#define DEBUG_ON    0
 
 /**
  * Setup the display state
@@ -150,7 +150,7 @@ void setup()
             -- YYYY, MM, DD, HH, MM, SS
      */
     time_t bag_date = tmConvert_t(2019, 02, 19, 00, 00, 00);
-    time_t now_date = tmConvert_t(2019, 01, 18, 9, 58, 00);
+    time_t now_date = tmConvert_t(2019, 01, 18, 11, 20, 00);
     countdown_time = bag_date - now_date;
 
     // TODO: use arduino time library for count down
@@ -191,9 +191,6 @@ void loop()
     }
 }
 
-int x = matrix.width();
-int pass = 0;
-
 /**
  * Time functions:
  *  - tmConvert_t: given a date info, makes time -- returns time in seconds since epoch
@@ -228,6 +225,11 @@ void compute_elapsedTime(ElapsedTime_t *t)
 
     t->days = difference;
 }
+
+// TODO: fix the matrix print code
+int x = matrix.width();
+int pass = 0;
+
 /**
  * Scrolling message
  * TODO: fix the display configuration to support the length of the message
@@ -263,7 +265,7 @@ void print_time(ElapsedTime_t *t)
     char str[11];
 
     // build the passed in arguments as string
-    sprintf(str, "%u:%d:%d:%d", t->days, t->hours, t->minutes, t->seconds);
+    sprintf(str, "%02u%02d%02d%02d", t->days, t->hours, t->minutes, t->seconds);
 #if DEBUG_ON
     Serial.print("Clock: |"); Serial.print(str); Serial.println("|");
 #endif
