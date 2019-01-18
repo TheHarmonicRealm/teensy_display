@@ -51,6 +51,7 @@ typedef enum
     EVENT_INCREMENT,
     EVENT_DECREMENT,
     EVENT_TIMER,
+    EVENT_SCROLL,
     // Add new events above this line
     EVENT_MAX
 } Event_t;
@@ -183,6 +184,10 @@ void loop()
     every(1000)
     {
         state = state_machine(state, EVENT_TIMER);
+    }
+    every(100)
+    {
+        state = state_machine(state, EVENT_SCROLL);
     }
 }
 
