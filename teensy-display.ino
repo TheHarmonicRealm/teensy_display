@@ -5,7 +5,7 @@
  *  - Teensy LC
  *  - Adafruit NeoMatrix
  *  - DebounceEvent button manager by Xose Perez
- *  - everytime library by Karl Fessel
+ *  - IntervalTimer library for Teensy
  *
  * Usage:
  *  3 buttons control the behavior of the display
@@ -17,8 +17,7 @@
 #include <Adafruit_NeoMatrix.h>
 #include <DebounceEvent.h>
 #include <TimeLib.h>
-//#include <stdbool.h>
-#include <everytime.h>
+#include <stdbool.h>
 
 #define DEBUG_ON    0
 
@@ -66,6 +65,24 @@ typedef struct              // parses the countdown_time to its components
     uint16_t days;
 } ElapsedTime_t;
 
+/**
+ * setup interrupts for scroll and timer events, callbacks, and variables to update controls
+ */
+IntervalTimer scroll_interval;
+IntervalTimer timer_interval;
+
+bool update_timer_event = false;
+bool update_scroll_event = false;;
+
+void timer_callback()
+{
+    update_timer_event = true;
+}
+
+void scroll_callback()
+{
+    update_scroll_event = true;
+}
 
 /** Good reference for display configuration:
  *  https://learn.adafruit.com/adafruit-neopixel-uberguide/neomatrix-library
@@ -150,7 +167,7 @@ void setup()
             -- YYYY, MM, DD, HH, MM, SS
      */
     time_t bag_date = tmConvert_t(2019, 02, 19, 00, 00, 00);
-    time_t now_date = tmConvert_t(2019, 01, 18, 11, 20, 00);
+    time_t now_date = tmConvert_t(2019, 01, 18, 13, 22, 00);
     countdown_time = bag_date - now_date;
 
     // TODO: use arduino time library for count down
@@ -164,6 +181,10 @@ void setup()
 
     // initialize state machine
     state = STATE_COUNTDOWN;
+
+    // initialize the interval timer multiplied by 1000 to milliseconds
+    timer_interval.begin(timer_callback, 1000*1000);
+    scroll_interval.begin(scroll_callback, 100*1000);
 }
 
 /**
@@ -181,12 +202,14 @@ void loop()
     dec_button->loop();
 
     // listen for timer events & update state machine
-    every(1000)
+    if (update_timer_event)
     {
+        update_timer_event = false;
         state = state_machine(state, EVENT_TIMER);
     }
-    every(100)
+    else if (update_scroll_event)
     {
+        update_scroll_event = false;
         state = state_machine(state, EVENT_SCROLL);
     }
 }
