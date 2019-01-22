@@ -16,6 +16,7 @@
  *  3 buttons control the behavior of the display
  *  - button 1: specifies mode for reprogramming the display
  *  - button 2 & 3: indicates increment/decrement values based on the mode
+ * Note: holding the DEC button down during boot will force set the datetime via user input
  *
  * Note: Spartronics clock also hosts an AT24C32 which is a 32K EEPROM. It is currently not used.
  * In the future, this can hold long messages or novels.
