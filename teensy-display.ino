@@ -4,19 +4,30 @@
  * Parts/Libraries:
  *  - Teensy LC
  *  - Adafruit NeoMatrix
- *  - DebounceEvent button manager by Xose Perez
+ *  - DS3231 RTC
+ *  - AT24C32 for storage -- currently not used
+ *
+ * Libraries:
+ *  - DebounceEvent button manager by Xose Perez https://github.com/xoseperez/debounceevent
  *  - IntervalTimer library for Teensy
+ *  - DS1307RTC library (compatible w/ DS3231) https://www.pjrc.com/teensy/td_libs_DS1307RTC.html
  *
  * Usage:
  *  3 buttons control the behavior of the display
  *  - button 1: specifies mode for reprogramming the display
  *  - button 2 & 3: indicates increment/decrement values based on the mode
+ *
+ * Note: Spartronics clock also hosts an AT24C32 which is a 32K EEPROM. It is currently not used.
+ * In the future, this can hold long messages or novels.
  */
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_NeoMatrix.h>
 #include <DebounceEvent.h>
+#include <DS1307RTC.h>
+#include <Time.h>
 #include <TimeLib.h>
+#include <Wire.h>
 #include <stdbool.h>
 
 #define DEBUG_ON    0
@@ -146,10 +157,89 @@ const uint16_t colors[] = {
     matrix.Color(255, 0, 0), matrix.Color(0, 255, 0), matrix.Color(0, 0, 255)};
 
 /**
+ * Set time: 1st get time from computer, 2nd write to RTC
+ */
+time_t set_time()
+{
+    // prompt user for time and set it on the board
+    state = STATE_MESSAGE;
+    print_scroll("Enter time using Serial Port");
+
+    // read & parse time from the user
+    Serial.println("Make sure Serial Terminal is set to Newline");
+    Serial.println("Enter today's date and time: YYYY:MM:DD:hh:mm:ss");
+
+    // NOTE: sscanf can be replaced w/ Serial.parseInt()
+    char *datetime = recvWithEndMarker();
+    Serial.print("Received: "); Serial.println(datetime);
+    int YYYY; int MM, DD, hh, mm, ss;
+    if (sscanf(datetime, "%04d:%02d:%02d:%02d:%02d:%02d", &YYYY, &MM, &DD, &hh, &mm, &ss) != 6)
+    {
+        Serial.println("Error: problem parsing YYYY:MM:DD:hh:mm:ss");
+        return 0;
+    }
+
+    // set RTC time
+    time_t t = tmConvert_t (YYYY, (byte)MM, (byte)DD, (byte)hh, (byte)mm, (byte)ss);
+    if (RTC.set(t) == false) // error occured while setting clock
+    {
+        state = STATE_MESSAGE;
+        print_scroll("Error: RTC.set() failed!");
+#if DEBUG_ON
+        Serial.println("Error: RTC.set failed.");
+#endif
+    }
+
+    return t;
+}
+
+
+// code from: http: //forum.arduino.cc/index.php?topic=396450
+char *recvWithEndMarker()
+{
+    int numChars = 20;   // YYYY:MM:DD:hh:mm:ss
+    static char receivedChars[20];
+    boolean newData = false;
+    static byte ndx = 0;
+    char endMarker = '\n';
+    char rc;
+
+    while (newData == false)
+    {
+        while (Serial.available() > 0)
+        {
+            rc = Serial.read();
+
+            if (rc != endMarker)
+            {
+                receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= numChars)
+                {
+                    ndx = numChars - 1;
+                }
+            }
+            else
+            {
+                receivedChars[ndx] = '\0'; // terminate the string
+                ndx = 0;
+                newData = true;
+                break;
+            }
+        }
+        delay(100);
+    }
+    return receivedChars;
+}
+
+
+/**
  * setup the display, matrix, and button callbacks
  **/
 void setup()
 {
+    Serial.begin(115200);
+
     // setup matrix display
     matrix.begin();
     matrix.setTextWrap(false);
@@ -161,17 +251,59 @@ void setup()
     inc_button = new DebounceEvent(INC_BUTTON_PIN, event_callback, BUTTON_PUSHBUTTON | BUTTON_DEFAULT_HIGH | BUTTON_SET_PULLUP);
     dec_button = new DebounceEvent(DEC_BUTTON_PIN, event_callback, BUTTON_PUSHBUTTON | BUTTON_DEFAULT_HIGH | BUTTON_SET_PULLUP);
 
-    /**
-     * Initialize the countdown_time -- specify bag date & current date to kickoff the countdown_time
-     * TODO: use str format for creating date -- https://forum.arduino.cc/index.php?topic=465881.0
-            -- YYYY, MM, DD, HH, MM, SS
-     */
-    time_t bag_date = tmConvert_t(2019, 02, 19, 00, 00, 00);
-    time_t now_date = tmConvert_t(2019, 01, 18, 13, 22, 00);
-    countdown_time = bag_date - now_date;
+    // Check if the DEC_BUTTON_PIN is held low (pressed) while we boot up. If so, force time setting.
+    bool force_set = (digitalRead(DEC_BUTTON_PIN) == LOW);
+    Serial.print("force_set is: "); Serial.println(force_set);
 
-    // TODO: use arduino time library for count down
-    // settime(now_date);
+    /**
+     * Initialize the countdown_time using bag date and current date for countdown_time
+     *      - via DS3231 RTC, read current time if available. If not, set current time using compiler time
+     *      - bag date is set in the code
+     * Use str format for creating date -- https://forum.arduino.cc/index.php?topic=465881.0
+     *      - YYYY, MM, DD, HH, MM, SS
+     */
+    time_t now_date = 0;
+    tmElements_t tm;
+
+    if (force_set)
+    {
+        now_date = set_time();
+    }
+
+    if (!RTC.read(tm))    // no prior date is set
+    {
+        if (RTC.chipPresent())
+        {
+            if ((now_date = set_time()) == 0)   // error: failed to set RTC time!
+            {
+                state = STATE_MESSAGE;
+                print_scroll("Error: RTC set time!");
+#if DEBUG_ON
+                Serial.println("RTC is stopped. Set time failed!");
+#endif
+            }
+        }
+        else
+        {
+            state = STATE_MESSAGE;
+            print_scroll("Error: RTC circuit!");
+#if DEBUG_ON
+            Serial.println("RTC read error!  Please check the circuitry.");
+#endif
+        }
+    }
+    else
+    {
+        // Successfully got the time from the RTC!
+        now_date = makeTime(tm);
+    }
+
+    if (now_date == 0)       // if now_date is null due to error, manually set the date
+    {
+        now_date = tmConvert_t(2019, 01, 5, 00, 00, 00);
+    }
+    time_t bag_date = tmConvert_t(2019, 02, 19, 20, 59, 00);
+    countdown_time = bag_date - now_date;
 
 #if DEBUG_ON
     Serial.print("bag_date: "); Serial.println(bag_date);
@@ -300,8 +432,7 @@ void print_time(ElapsedTime_t *t)
 }
 
 int current_color=0;
-// TODO: fix the code for color selection
-// FIXME: this code does NOT work!
+// FIXME: color code selection does NOT work!
 void change_text_color()
 {
     int next = current_color;
