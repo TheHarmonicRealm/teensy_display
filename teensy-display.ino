@@ -33,6 +33,106 @@
 
 #define DEBUG_ON    0
 
+#define CHAR_HEIGHT 7
+
+// 4x7 number digit font bitmaps
+static const byte numbers[][CHAR_HEIGHT]
+{
+  // 0
+  { B11110000,
+    B10010000,
+    B10010000,
+    B10010000,
+    B10010000,
+    B10010000,
+    B11110000 },
+  //1
+  { B00010000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000 },
+  // 2
+  { B11110000,
+    B00010000,
+    B00010000,
+    B11110000,
+    B10000000,
+    B10000000,
+    B11110000 },
+  // 3
+  { B11110000,
+    B00010000,
+    B00010000,
+    B11110000,
+    B00010000,
+    B00010000,
+    B11110000 },
+  // 4
+  { B10010000,
+    B10010000,
+    B10010000,
+    B11110000,
+    B00010000,
+    B00010000,
+    B00010000, },
+  // 5
+  {
+    B11110000,
+    B10000000,
+    B10000000,
+    B11110000,
+    B00010000,
+    B00010000,
+    B11110000, },
+  // 6
+  { B11110000,
+    B10000000,
+    B10000000,
+    B11110000,
+    B10010000,
+    B10010000,
+    B11110000, },
+  // 7
+  { B11110000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000,
+    B00010000, },
+  // 8
+  { B11110000,
+    B10010000,
+    B10010000,
+    B11110000,
+    B10010000,
+    B10010000,
+    B11110000, },
+  // 9
+  { B11110000,
+    B10010000,
+    B10010000,
+    B11110000,
+    B00010000,
+    B00010000,
+    B11110000, },
+};
+
+static const byte colon_bitmap[] =
+{
+  // : (2 pix wide)
+  B00000000,
+  B10000000,
+  B10000000,
+  B00000000,
+  B10000000,
+  B10000000,
+  B00000000,
+};
+
 /**
  * Setup the display state
  *      - countdown: displays the countdown clock -- updated by timer_ticks
@@ -582,7 +682,67 @@ void do_clock(State_t state)
 #endif
 
             // display the time value
-            print_time(&elapsed_time);
+            // print_time(&elapsed_time);
+            print_countdown(elapsed_time.days, elapsed_time.hours, elapsed_time.minutes, elapsed_time.seconds);
             break;
     }
+}
+
+static int _cursor = 0;
+
+void clear_screen(void)
+{
+  matrix.clear();
+  //matrix.show();
+  _cursor = 0;
+}
+
+void print_digit(unsigned i, uint16_t color)
+{
+  int width = 5; // Digit width
+
+  if (i > 10)
+  {
+    // Invalid data, nothing to do...
+    return;
+  }
+
+  matrix.fillRect(_cursor, 0, _cursor + width, CHAR_HEIGHT, 0);
+  matrix.drawBitmap(_cursor, 0, numbers[i], width, CHAR_HEIGHT, color);
+  //matrix.show();
+  _cursor += width;
+}
+
+void print_colon(uint16_t color)
+{
+  int width = 2; // Colon width
+
+  matrix.fillRect(_cursor, 0, _cursor + width, CHAR_HEIGHT, 0);
+  matrix.drawBitmap(_cursor, 0, colon_bitmap, width, CHAR_HEIGHT, color);
+  //matrix.show();
+  _cursor += width;
+}
+
+// Print a 2-digit number
+void print_num(unsigned i, uint16_t color)
+{
+  uint8_t temp_digit;
+
+  temp_digit = i % 10;
+  i = i / 10;
+  print_digit(i % 10, color);
+  print_digit(temp_digit, color);
+}
+
+void print_countdown(unsigned days, unsigned hours, unsigned mins, unsigned secs)
+{
+  clear_screen();
+  print_num(days, colors[1]);
+  print_colon(colors[0]);
+  print_num(hours, colors[1]);
+  print_colon(colors[0]);
+  print_num(mins, colors[1]);
+  print_colon(colors[0]);
+  print_num(secs, colors[1]);
+  matrix.show();
 }
