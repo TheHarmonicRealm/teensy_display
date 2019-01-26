@@ -478,31 +478,30 @@ void compute_elapsedTime(ElapsedTime_t *t)
     t->days = difference;
 }
 
-// TODO: fix the matrix print code
-int x = matrix.width();
-int pass = 0;
+int _pixel_size = 6;    // standard pixel size for Adafruit_GFX is 6px per character
+int _x = matrix.width();
+int _pass = 0;
 
 /**
- * Scrolling message
- * TODO: fix the display configuration to support the length of the message
- * and font size
+ * Display a scrolling message
  */
 void print_scroll(const char *str)
 {
     matrix.fillScreen(0);
-    matrix.setCursor(x, 0);
+    matrix.setCursor(_x, 0);
     matrix.print(F(str));
-    /** starts the print from width of the matrix + offset, which is 36
+    /**
+     * setCursor() sets the pixel position from where to render the text
+     * offset is calculated based on font width, screen width, and text length
      * when offset is reached, pass is complete & color is updated
-     * TODO: fix the offset calculation
     **/
-    int offset = (strlen(str)*4) + 36;
-    if (--x < -offset)
+    int offset = (strlen(str)*_pixel_size) + _x;
+    if (--_x < -offset)
     {
-        x = matrix.width();
-        if (++pass >= 3)
-            pass = 0;
-        matrix.setTextColor(colors[pass]);
+        _x = matrix.width();
+        if (++_pass >= 3)
+            _pass = 0;
+        matrix.setTextColor(colors[_pass]);
     }
     matrix.show();
 }
