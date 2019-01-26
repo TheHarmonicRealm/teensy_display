@@ -14,8 +14,8 @@
  *
  * Usage:
  *  3 buttons control the behavior of the display
- *  - button 1: specifies mode for reprogramming the display
- *  - button 2 & 3: indicates increment/decrement values based on the mode
+ *  - button 1: specifies mode for reprogramming the display: prints scrolling message or coundown clock
+ *  - button 2 & 3: unused -- button push will generate corresponding events
  * Note: holding the DEC button down during boot will force set the datetime via user input
  *
  * Note: Spartronics clock also hosts an AT24C32 which is a 32K EEPROM. It is currently not used.
@@ -35,7 +35,7 @@
 
 #define CHAR_HEIGHT 7
 
-// 4x7 number digit font bitmaps
+// 4x7 number digit font bitmaps -- used for displaying clockface
 static const byte numbers[][CHAR_HEIGHT]
 {
   // 0
@@ -143,10 +143,6 @@ typedef enum   // at each button mode press, display mode changes accordingly
 {
     STATE_MESSAGE = 0,
     STATE_COUNTDOWN,
-    STATE_DAYS,
-    STATE_HOURS,
-    STATE_MINUTES,
-    STATE_SECONDS,
     // Add new states above this line
     STATE_MAX
 } State_t;
@@ -168,7 +164,7 @@ typedef enum
 } Event_t;
 
 State_t state;                                             // tracks the state of the display
-const char *message = { "Welcome to Spartronics Open House!" }; // prints the message on display
+const char *message = { "Spartronics: 4915. Woot!" }; // prints the message on display
 
 uint32_t countdown_time;    // tracks the countdown time to bag date
 typedef struct              // parses the countdown_time to its components
@@ -259,6 +255,7 @@ const uint16_t colors[] = {
 
 /**
  * Set time: 1st get time from computer, 2nd write to RTC
+ * Note: this code could be simplified by switching use of Serial.parseInt()
  */
 time_t set_time()
 {
@@ -293,7 +290,6 @@ time_t set_time()
 
     return t;
 }
-
 
 // code from: http: //forum.arduino.cc/index.php?topic=396450
 char *recvWithEndMarker()
@@ -511,42 +507,6 @@ void print_scroll(const char *str)
     matrix.show();
 }
 
-/**
- * Print time starting at 0,0 origin
- * TODO: change color of the display text based on state mode
- */
-//void print_time(uint16_t dd, uint8_t hh, uint8_t mm, uint8_t ss)
-void print_time(ElapsedTime_t *t)
-{
-    char str[11];
-
-    // build the passed in arguments as string
-    sprintf(str, "%02u%02d%02d%02d", t->days, t->hours, t->minutes, t->seconds);
-#if DEBUG_ON
-    Serial.print("Clock: |"); Serial.print(str); Serial.println("|");
-#endif
-    matrix.fillScreen(0);
-    matrix.setCursor(0, 0);
-    matrix.setTextColor(colors[1]);
-    matrix.print(F(str));
-    matrix.show();
-}
-
-int current_color=0;
-// FIXME: color code selection does NOT work!
-void change_text_color()
-{
-    int next = current_color;
-    if (next == 3)
-    {
-        next = 0;
-    }
-
-    matrix.setTextColor(colors[++next]);
-    matrix.show();
-    current_color = next;
-}
-
 
 /**
  * Responsible for updating the state of the system
@@ -568,10 +528,6 @@ State_t advance_state(State_t current_state)
  * State machine to control the display
  * Note: events triggered by the buttons and timer_ticks
  */
-#define ONE_DAY     (24 /* hrs */ * 60 /* mins */ * 60 /* sec */)
-#define ONE_HOUR    (60 /* mins */ * 60 /* sec */)
-#define ONE_MINUTE  (60 /* sec */)
-#define ONE_SECOND (1 /* sec */)
 State_t state_machine(State_t current_state, Event_t event)
 {
     State_t next_state = current_state;
@@ -590,59 +546,23 @@ State_t state_machine(State_t current_state, Event_t event)
         switch (current_state)
         {
             case STATE_COUNTDOWN:   // Fall through
+                ElapsedTime_t elapsed_time;
+
+                compute_elapsedTime(&elapsed_time);
+    #if DEBUG_ON
+                Serial.print("---countdown_time: "); Serial.println(countdown_time);
+                Serial.print(" DD: "); Serial.println(elapsed_time.days);
+                Serial.print(" HH: "); Serial.println(elapsed_time.hours);
+                Serial.print(" MM: "); Serial.println(elapsed_time.minutes);
+                Serial.print(" SS: "); Serial.println(elapsed_time.seconds);
+    #endif
+
+                // display the time value
+                print_countdown(elapsed_time.days, elapsed_time.hours, elapsed_time.minutes, elapsed_time.seconds);
+                break;
+
             case STATE_MESSAGE:
-                break;
-
-            case STATE_DAYS:
-                change_text_color();
-                if (event == EVENT_INCREMENT)
-                {
-                    // increase the day count
-                    countdown_time += ONE_DAY;
-                }
-                else if (event == EVENT_DECREMENT)
-                {
-                    countdown_time -= ONE_DAY;
-                }
-                break;
-
-            case STATE_HOURS:
-                change_text_color();
-                if (event == EVENT_INCREMENT)
-                {
-                    // increase the day count
-                    countdown_time += ONE_HOUR;
-                }
-                else if (event == EVENT_DECREMENT)
-                {
-                    countdown_time -= ONE_HOUR;
-                }
-                break;
-
-            case STATE_MINUTES:
-                change_text_color();
-                if (event == EVENT_INCREMENT)
-                {
-                    // increase the day count
-                    countdown_time += ONE_MINUTE;
-                }
-                else if (event == EVENT_DECREMENT)
-                {
-                    countdown_time -= ONE_MINUTE;
-                }
-                break;
-
-            case STATE_SECONDS:
-                change_text_color();
-                if (event == EVENT_INCREMENT)
-                {
-                    // increase the day count
-                    countdown_time += ONE_SECOND;
-                }
-                else if (event == EVENT_DECREMENT)
-                {
-                    countdown_time -= ONE_SECOND;
-                }
+                print_scroll(message);
                 break;
 
             // unhandled case -- don't know how we got here, so just set the default
@@ -652,45 +572,14 @@ State_t state_machine(State_t current_state, Event_t event)
         }
     }
 
-    // update the display based on state
-    do_clock(next_state);
-
     return next_state;
 }
 
 /**
- * Updates the display according to state instructions
+ * Print clock face: DD:HH:MM:SS
+ * Requires bitmap print to support the size of the display
  */
-void do_clock(State_t state)
-{
-    switch (state)
-    {
-        case STATE_MESSAGE:
-            // Print our message
-            print_scroll(message);
-            break;
-        case STATE_COUNTDOWN:
-        default:
-            ElapsedTime_t elapsed_time;
-
-            compute_elapsedTime(&elapsed_time);
-#if DEBUG_ON
-            Serial.print("---countdown_time: "); Serial.println(countdown_time);
-            Serial.print(" DD: "); Serial.println(elapsed_time.days);
-            Serial.print(" HH: "); Serial.println(elapsed_time.hours);
-            Serial.print(" MM: "); Serial.println(elapsed_time.minutes);
-            Serial.print(" SS: "); Serial.println(elapsed_time.seconds);
-#endif
-
-            // display the time value
-            // print_time(&elapsed_time);
-            print_countdown(elapsed_time.days, elapsed_time.hours, elapsed_time.minutes, elapsed_time.seconds);
-            break;
-    }
-}
-
 static int _cursor = 0;
-
 void clear_screen(void)
 {
   matrix.clear();
