@@ -576,6 +576,11 @@ State_t state_machine(State_t current_state, Event_t event)
 {
     State_t next_state = current_state;
 
+    if (event == EVENT_TIMER)
+    {
+        countdown_time = countdown_time - 1;
+    }
+
     if (event == EVENT_MODE)
     {
         next_state = advance_state(current_state);
@@ -586,10 +591,6 @@ State_t state_machine(State_t current_state, Event_t event)
         {
             case STATE_COUNTDOWN:   // Fall through
             case STATE_MESSAGE:
-                if (event == EVENT_TIMER)
-                {
-                    countdown_time = countdown_time - 1;
-                }
                 break;
 
             case STATE_DAYS:
